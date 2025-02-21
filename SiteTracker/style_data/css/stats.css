@@ -1,0 +1,73 @@
+* {box-sizing: border-box;}
+
+@font-face {
+    font-family: "GG Sans";
+    src: url("/fonts/ggsans-Bold.ttf");
+}
+
+body {
+    background-color: #222425;
+    margin: 0;
+    padding: 0;
+}
+
+#header {
+    overflow: hidden;
+    background-image: url("/images/background-image.jpg");
+    background-size: cover;
+    background-repeat: no-repeat;
+    border-style: groove;
+    border-color: rgba(255, 36, 0, 0.5);
+    border-width: medium;
+    padding: 10px 10px;
+}
+
+h1 {
+    color: azure;
+    display: inline;
+    font-size: 60px;
+}
+
+h1:visited {
+    text-decoration: none !important;
+}
+
+.servers {
+    width: 100px;
+    height: 100%;
+    position: fixed;
+    background-image: linear-gradient(to bottom right, rgba(255, 36, 0, 0.5), rgba(55, 114, 45, 0.5));
+}
+
+.servers a {
+    display: table;
+    padding: 12px;
+    text-decoration: none;
+}
+
+.servers a:hover img {
+    border-radius: 35%;
+    transition:0.5s;
+    -webkit-transition:0.5s;
+    -moz-transition:0.5s;
+    margin-left: 5px;
+}
+
+.servers a.active img {
+    border-radius: 35%;
+    margin-left: 5px;
+}
+
+.servers img {
+    border-radius: 50%;
+}
+
+.stats {
+    margin: 0px 0px 0px 100px;
+    padding-left: 20px;
+    height: 100%;
+    width: 100%;
+    position: fixed;
+    background-image: linear-gradient(to bottom right, rgba(125, 23, 7, 0.5), rgba(19, 82, 8, 0.5));
+    color: antiquewhite;
+}

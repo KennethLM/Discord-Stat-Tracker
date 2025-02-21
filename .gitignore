@@ -1,0 +1,20 @@
+#ignore node_modules
+/node_modules
+
+#ignore Test Bots
+/StatTracker/oldTracker.js
+/StatTracker/TestTracker.js
+
+#ignore logs
+/StatTracker/logs
+
+#ignore sensitive info
+*.env
+/SiteTracker/config.json
+
+#ignore storage data
+/storage/serverData.json
+/storage/stats.db
+
+#ignore for mac
+.DS_Store
