@@ -23,35 +23,6 @@ const client_secret = process.env.CLIENT_SECRET
 
 const db = require(path.join(__dirname, "..", "StatTracker", "db.js"))
 const serverData = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "storage", "serverData.json"), 'utf8'))
-const serverQuery = `
-  SELECT guild_id
-  FROM users
-  WHERE user_id = ?
-`;
-const msgQuery = `
-  SELECT username, msgs
-  FROM users
-  WHERE guild_id = ?
-  ORDER BY msgs DESC;
-`
-const bmsgQuery = `
-  SELECT username, bi_msgs
-  FROM users
-  WHERE guild_id = ?
-  ORDER BY msgs DESC;
-`
-const vcQuery = `
-  SELECT username, total_voice
-  FROM users
-  WHERE guild_id = ?
-  ORDER BY msgs DESC;
-`
-const bvcQuery = `
-  SELECT username, bi_voice
-  FROM users
-  WHERE guild_id = ?
-  ORDER BY msgs DESC;
-`
 
 function secondsToDHMS(seconds) {
   var days = Math.floor(seconds / 86400);
@@ -60,7 +31,7 @@ function secondsToDHMS(seconds) {
   var remainingSeconds = seconds % 60;
 
   var resultArray = [];
-  
+
   if (days > 0) {
     resultArray.push(`D: ${days}, `);
   }
@@ -81,13 +52,19 @@ function secondsToDHMS(seconds) {
 }
 
 function queryMaker(select, opts) {
-  if (select == null ||select.length == 0) {
+  if (select == null || select.length == 0) {
     return null;
   }
   queryString = `SELECT ` + select.join(", ");
-  queryString += `
-  FROM users
-  WHERE guild_id = ?`;
+  if (select[0] == "guild_id") {
+    queryString += `
+    FROM users
+    WHERE user_id = ?`
+  } else {
+    queryString += `
+    FROM users
+    WHERE guild_id = ?`;
+  }
   if (opts != null) {
     queryString += `
     ORDER BY msgs ${opts[0]}`;
@@ -118,7 +95,7 @@ function listMaker(data, pfp, active) {
         <img src="${value["icon"]}" alt="" width="75" height="75">
         </a>`
     }
-    
+
   }
   list += `</div>`
   return list
@@ -166,56 +143,58 @@ async function statMaker(rows, type) {
 }
 
 app.get("/", async (request, response) => {
-    if (!request.session.bearer_token) return response.render("index", {home: url, url : auth_link});
-    if (!request.session.user) {
-      const info = await fetch('https://discord.com/api/users/@me', {
-        headers: {
-          authorization: `Bearer ${request.session.bearer_token}`,
-        },
-      });
-      const json = await info.json();
-      if (!json.username) return response.render("index", {url : auth_link});//add err
-  
-      request.session.user = json
-      request.session.user.pfp = `https://cdn.discordapp.com/avatars/${request.session.user.id}/${request.session.user.avatar}`
-    }
-    if (!request.session.servers) {
-      db.all(serverQuery, [request.session.user.id], (err, rows) => {
-        var serverList = []
-        if (err) {
-            console.error(err.message);
+  if (!request.session.bearer_token) return response.render("index", { home: url, url: auth_link });
+  if (!request.session.user) {
+    const info = await fetch('https://discord.com/api/users/@me', {
+      headers: {
+        authorization: `Bearer ${request.session.bearer_token}`,
+      },
+    });
+    const json = await info.json();
+    if (!json.username) return response.render("index", { url: auth_link });//add err
+
+    request.session.user = json
+    request.session.user.pfp = `https://cdn.discordapp.com/avatars/${request.session.user.id}/${request.session.user.avatar}`
+  }
+  if (!request.session.servers) {
+    db.all(queryMaker(["guild_id"]), [request.session.user.id], (err, rows) => {
+      var serverList = []
+      if (err) {
+        console.error(err.message);
         return;
-        }
-  
-        if (rows) {
-          rows.forEach((row) => {
-            serverList.push(row.guild_id)
-          });
-        }
-  
-        var userServers = Object.keys(serverData).filter(key => serverList.includes(key)).reduce((object, key) => {object[key] = serverData[key]; return object}, {});
-        request.session.servers = userServers
-  
-        var variables = {
-          home: url,
-          message: `Welcome to Stat Tracker Online, ${request.session.user.username}!`,
-          servers: listMaker(request.session.servers, request.session.user.pfp, null) 
-        }
-    
-        response.render("dash", variables)
-  
-      });
-    } else {
+      }
+
+      if (rows) {
+        rows.forEach((row) => {
+          serverList.push(row.guild_id)
+        });
+      }
+
+      var userServers = Object.keys(serverData)
+        .filter(key => serverList.includes(key))
+        .reduce((object, key) => { object[key] = serverData[key]; return object }, {});
+      request.session.servers = userServers;
+
       var variables = {
         home: url,
         message: `Welcome to Stat Tracker Online, ${request.session.user.username}!`,
-        pfp: `<img id="pfp" src ="https://cdn.discordapp.com/avatars/${request.session.user.id}/${request.session.user.avatar}?size=512">`,
-        servers: listMaker(request.session.servers, request.session.user.pfp, null) 
+        servers: listMaker(request.session.servers, request.session.user.pfp, null)
       }
-  
+
       response.render("dash", variables)
+
+    });
+  } else {
+    var variables = {
+      home: url,
+      message: `Welcome to Stat Tracker Online, ${request.session.user.username}!`,
+      pfp: `<img id="pfp" src ="https://cdn.discordapp.com/avatars/${request.session.user.id}/${request.session.user.avatar}?size=512">`,
+      servers: listMaker(request.session.servers, request.session.user.pfp, null)
     }
-  });
+
+    response.render("dash", variables)
+  }
+});
 
 app.get('/auth/discord', async (request, response) => {
   var token_request = new URLSearchParams({
@@ -230,17 +209,17 @@ app.get('/auth/discord', async (request, response) => {
   var tok_post = await fetch('https://discord.com/api/oauth2/token', {
     method: 'POST',
     body: token_request,
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
 
   var tok_response = await tok_post.json()
   request.session.bearer_token = tok_response['access_token']
 
-	return response.redirect("/");
+  return response.redirect("/");
 });
 
 app.get('/server/:id', async (request, response) => {
-  if (!request.session.bearer_token || !request.session.user || !request.session.servers) return response.render("index", {home: url, url : auth_link});
+  if (!request.session.bearer_token || !request.session.user || !request.session.servers) return response.render("index", { home: url, url: auth_link });
   guild_id = request.params["id"]
   if (!Object.keys(request.session.servers).includes(guild_id)) return response.send("ERROR: INVALID GUILD ID")
 
@@ -259,104 +238,109 @@ app.get('/server/:id', async (request, response) => {
 });
 
 app.get('/server/:id/:stat', async (request, response) => {
-  if (!request.session.bearer_token || !request.session.user || !request.session.servers) return response.render("index", {home: url, url : auth_link});
+  if (!request.session.bearer_token || !request.session.user || !request.session.servers) return response.render("index", { home: url, url: auth_link });
   guild_id = request.params["id"]
   stat_type = request.params["stat"]
-  if (!Object.keys(request.session.servers).includes(guild_id)) return response.send("ERROR: INVALID GUILD ID")  
-  if (stat_type == "msg") {
-    await db.all(msgQuery, [guild_id], async (err, rows) => {
-      if (err) {
-        console.error(err.message);
-        return;
-      }
-      index = rows.map(function (row) {return row.username}).indexOf(request.session.user.username)
-      var variables = {
-        home: url,
-        servers: listMaker(request.session.servers, request.session.user.pfp, guild_id),
-        rank: await statMaker(rows, stat_type),
-        indstats: `You are ranked ${index + 1}
-        in messages with ${rows[index].msgs}.`
-      }
-      response.render("stats", variables)
-    });
-  } else if (stat_type == "vc") {
-    await db.all(vcQuery, [guild_id], async (err, rows) => {
-      if (err) {
-        console.error(err.message);
-        return;
-      }
-      index = rows.map(function (row) {return row.username}).indexOf(request.session.user.username)
-      var variables = {
-        home: url,
-        servers: listMaker(request.session.servers, request.session.user.pfp, guild_id),
-        rank: await statMaker(rows, stat_type),
-        indstats: `You are ranked ${index + 1}
-        in VC time with ${secondsToDHMS(rows[index].total_voice)}.`
-      }
-      response.render("stats", variables)
-    });
-  } else if (stat_type == "bmsg") {
-    await db.all(bmsgQuery, [guild_id], async (err, rows) => {
-      if (err) {
-        console.error(err.message);
-        return;
-      }
-      index = rows.map(function (row) {return row.username}).indexOf(request.session.user.username)
-      var variables = {
-        home: url,
-        servers: listMaker(request.session.servers, request.session.user.pfp, guild_id),
-        rank: await statMaker(rows, stat_type),
-        indstats: `You are ranked ${index + 1}
-        in messages in the last two weeks with ${rows[index].bi_msgs}.`
-      }
-      response.render("stats", variables)
-    });
-  } else if (stat_type == "bvc") {
-    await db.all(bvcQuery, [guild_id], async (err, rows) => {
-      if (err) {
-        console.error(err.message);
-        return;
-      }
-      index = rows.map(function (row) {return row.username}).indexOf(request.session.user.username)
-      var variables = {
-        home: url,
-        servers: listMaker(request.session.servers, request.session.user.pfp, guild_id),
-        rank: await statMaker(rows, stat_type),
-        indstats: `You are ranked ${index + 1}
-        in VC in the last two weeks with ${rows[index].bi_voice}.`
-      }
-      response.render("stats", variables)
-    });
-  } else {
-    response.send("ERROR: INVALID PARAMETER")
+  if (!Object.keys(request.session.servers).includes(guild_id)) return response.send("ERROR: INVALID GUILD ID")
+  switch (stat_type) {
+    case "msg":
+      await db.all(queryMaker(["username", "msgs"], ["DESC"]), [guild_id], async (err, rows) => {
+        if (err) {
+          console.error(err.message);
+          return;
+        }
+        index = rows.map(function (row) { return row.username }).indexOf(request.session.user.username)
+        var variables = {
+          home: url,
+          servers: listMaker(request.session.servers, request.session.user.pfp, guild_id),
+          rank: await statMaker(rows, stat_type),
+          indstats: `You are ranked ${index + 1}
+          in messages with ${rows[index].msgs}.`
+        }
+        response.render("stats", variables);
+      });
+      break;
+    case "vc":
+      await db.all(queryMaker(["username", "total_voice"], ["DESC"]), [guild_id], async (err, rows) => {
+        if (err) {
+          console.error(err.message);
+          return;
+        }
+        index = rows.map(function (row) { return row.username }).indexOf(request.session.user.username)
+        var variables = {
+          home: url,
+          servers: listMaker(request.session.servers, request.session.user.pfp, guild_id),
+          rank: await statMaker(rows, stat_type),
+          indstats: `You are ranked ${index + 1}
+          in VC time with ${secondsToDHMS(rows[index].total_voice)}.`
+        }
+        response.render("stats", variables);
+      });
+      break;
+    case "bmsg":
+      await db.all(queryMaker(["username", "bi_msgs"], ["DESC"]), [guild_id], async (err, rows) => {
+        if (err) {
+          console.error(err.message);
+          return;
+        }
+        index = rows.map(function (row) { return row.username }).indexOf(request.session.user.username)
+        var variables = {
+          home: url,
+          servers: listMaker(request.session.servers, request.session.user.pfp, guild_id),
+          rank: await statMaker(rows, stat_type),
+          indstats: `You are ranked ${index + 1}
+          in messages in the last two weeks with ${rows[index].bi_msgs}.`
+        }
+        response.render("stats", variables);
+      });
+      break;
+    case "bvc":
+      await db.all(queryMaker(["username", "bi_voice"], ["DESC"]), [guild_id], async (err, rows) => {
+        if (err) {
+          console.error(err.message);
+          return;
+        }
+        index = rows.map(function (row) { return row.username }).indexOf(request.session.user.username)
+        var variables = {
+          home: url,
+          servers: listMaker(request.session.servers, request.session.user.pfp, guild_id),
+          rank: await statMaker(rows, stat_type),
+          indstats: `You are ranked ${index + 1}
+          in VC in the last two weeks with ${rows[index].bi_voice}.`
+        }
+        response.render("stats", variables);
+      });
+      break;
+    default:
+      response.send("ERROR: INVALID PARAMETER");
   }
 });
 
 app.listen(portNumber, (err) => {
-    if (err) {
-      console.log("Starting server failed.");
+  if (err) {
+    console.log("Starting server failed.");
+  } else {
+    console.log(
+      `Web server started and running at http://localhost:${portNumber}`
+    );
+    process.stdout.write("Type stop to shutdown the server: ");
+  }
+});
+
+process.stdin.setEncoding("utf8"); /* encoding */
+process.stdin.on("readable", () => {
+  /* on equivalent to addEventListener */
+  const dataInput = process.stdin.read();
+  while (process.stdin.read() !== null) { }
+  if (dataInput !== null) {
+    const command = dataInput.trim();
+    if (command === "stop") {
+      console.log("Shutting down the server");
+      process.exit(0); /* exiting */
     } else {
-      console.log(
-        `Web server started and running at http://localhost:${portNumber}`
-      );
+      /* After invalid command, we cannot type anything else */
+      console.log(`Invalid command: ${command}`);
       process.stdout.write("Type stop to shutdown the server: ");
     }
-  });
-
-  process.stdin.setEncoding("utf8"); /* encoding */
-  process.stdin.on("readable", () => {
-    /* on equivalent to addEventListener */
-    const dataInput = process.stdin.read();
-    while (process.stdin.read() !== null) {}
-    if (dataInput !== null) {
-      const command = dataInput.trim();
-      if (command === "stop") {
-        console.log("Shutting down the server");
-        process.exit(0); /* exiting */
-      } else {
-        /* After invalid command, we cannot type anything else */
-        console.log(`Invalid command: ${command}`);
-        process.stdout.write("Type stop to shutdown the server: ");
-      }
-    }
-  });
+  }
+});
